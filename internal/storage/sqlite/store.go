@@ -62,15 +62,14 @@ func (s *Store) WithTx(ctx context.Context, fn func(repository.Tx) error) error 
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	wrapped := &queries{q: tx}
-	callbackErr := fn(wrapped)
-	if err := tx.Commit(); err != nil {
-		if callbackErr != nil {
-			return errors.Join(callbackErr, fmt.Errorf("commit transaction: %w", err))
+	if err := fn(wrapped); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			return errors.Join(err, fmt.Errorf("rollback transaction: %w", rollbackErr))
 		}
-		return fmt.Errorf("commit transaction: %w", err)
+		return err
 	}
-	if callbackErr != nil {
-		return callbackErr
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil
 }
